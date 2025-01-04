@@ -6,6 +6,10 @@
         3. train with LORA
         4. iteratively do this
 
+# Training Dataset
+https://huggingface.co/datasets/ajibawa-2023/Maths-College
+https://huggingface.co/datasets/open-web-math/open-web-math
+
 # Related Works
 **1. Progressive Neural Networks:**
 

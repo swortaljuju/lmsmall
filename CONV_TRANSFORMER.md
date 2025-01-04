@@ -4,6 +4,10 @@ so shouldn’t use adaptive granularity
 instead, maybe like encoder and decoder and conv network with higher dimension at the beginning and lower dimension in the middle, do the same thing based on attention mechanism?
 early layer: large block size, small embedding; inner layer: small block size, large embedding
 
+# Training Dataset
+https://huggingface.co/datasets/ajibawa-2023/Maths-College
+https://huggingface.co/datasets/open-web-math/open-web-math
+
 # Related Works
 
 **sentence embedding** 
