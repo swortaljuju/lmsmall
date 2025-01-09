@@ -1,4 +1,4 @@
-from base_data_preparer import BaseDataPreparer, DatasetConfig
+from base_data_preparer import BaseDataPreparer, DatasetConfig, SplitConfig
 
 
 def content_fetcher1(doc):
@@ -9,7 +9,7 @@ def content_fetcher2(doc):
     return doc["text"]
 
 
-BaseDataPreparer(
+data_preparer = BaseDataPreparer(
     "reasoningtokens",
     [
         DatasetConfig(
@@ -18,4 +18,8 @@ BaseDataPreparer(
         ),
         DatasetConfig("open-web-math/open-web-math", data_keys=["text"]),
     ],
-).prepare()
+)
+
+# data_preparer.prepare()
+
+data_preparer.split(SplitConfig(8, 1, 1))

@@ -2,12 +2,13 @@ import os
 import multiprocessing as mp
 import numpy as np
 import tiktoken
+from pathlib import Path
 from datasets import load_dataset
 from tqdm import tqdm
 from dataclasses import dataclass
-from typing import Callable, List, Dict
+from typing import List, Dict
 from functools import partial
-from tiktoken.core import Encoding
+import re 
 
 
 @dataclass
@@ -15,6 +16,15 @@ class DatasetConfig:
     dataset_name: str
     data_keys: List[str]
     dataset_split: str = "train"
+
+
+# This class is used to configure the split of the data into training, validation and testing sets. The partition should be a number between 0 and 10.
+@dataclass
+class SplitConfig:
+    training_data_partition: int
+    validation_data_partition: int
+    testing_data_partition: int
+
 
 # This is the base class for all data preparers. It is responsible for preparing the data for the model.
 class BaseDataPreparer:
@@ -48,7 +58,9 @@ class BaseDataPreparer:
         tokens = [
             self._encoder._special_tokens["<|endoftext|>"]
         ]  # the special <|endoftext|> token delimits all documents
-        tokens.extend(self._encoder.encode_ordinary(" ".join([doc[key] for key in data_keys])))
+        tokens.extend(
+            self._encoder.encode_ordinary(" ".join([doc[key] for key in data_keys]))
+        )
         tokens_np = np.array(tokens)
         assert (0 <= tokens_np).all() and (
             tokens_np < 2**16
@@ -80,7 +92,11 @@ class BaseDataPreparer:
                     split=dataset_config.dataset_split,
                     cache_dir=self._base_dataset_path,
                 )
-                for tokens in pool.imap(partial(self._tokenize, data_keys = dataset_config.data_keys), fw, chunksize=16):
+                for tokens in pool.imap(
+                    partial(self._tokenize, data_keys=dataset_config.data_keys),
+                    fw,
+                    chunksize=16,
+                ):
                     # is there enough space in the current shard for the new tokens?
                     if token_count + len(tokens) < BaseDataPreparer._shared_size:
                         # simply append tokens to current shard
@@ -114,3 +130,33 @@ class BaseDataPreparer:
             if token_count != 0:
                 filename = self.__getTokenFileName(shard_index)
                 self.__write_datafile(filename, all_tokens_np[:token_count])
+
+    # Split the data into train, validation and test sets
+    # This will only split the file shards, not all rows in the dataset
+    def split(self, split_config: SplitConfig):
+        assert (
+            split_config.training_data_partition
+            + split_config.validation_data_partition
+            + split_config.testing_data_partition
+            == 10
+        ), "The sum of the training, validation and testing data percentages must be 10"
+        matching_files = Path(self._base_token_path).glob(f"{self._data_name}_*.npy")
+        # Rename the files to remove the split suffix
+        for file in matching_files:
+            file.rename(Path(f"{file.parent}/{re.sub('_testing|_training|_validation', '', file.stem)}.npy"))
+        matching_files = Path(self._base_token_path).glob(f"{self._data_name}_*.npy")
+        validation_and_training_partition = (
+            split_config.validation_data_partition
+            + split_config.training_data_partition
+        )
+        for i, file in enumerate(matching_files):
+            rem = i % 10
+            if rem < split_config.training_data_partition:
+                split = "training"
+            elif rem < validation_and_training_partition:
+                split = "validation"
+            else:
+                split = "testing"
+            new_file_name = Path(f"{file.parent}/{file.stem}_{split}.npy") 
+            print(f"renaming {file.name} to {new_file_name}")   
+            file.rename(new_file_name)
