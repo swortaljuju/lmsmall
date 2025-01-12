@@ -4,6 +4,8 @@ import torch.nn as nn
 from torch.nn import functional as F
 from components import CausalSelfAttention, MLP
 from base_trainer import BaseTrainer
+import sys
+from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
 
 # -----------------------------------------------------------------------------
 
@@ -104,16 +106,22 @@ max_steps = (
 )
 weight_decay = 0.1
 learning_rate = 6e-4
-trainer = BaseTrainer(
-    model,
-    total_batch_size=total_batch_size,
-    B=B,
-    T=T,
-    max_lr=max_lr,
-    min_lr=min_lr,
-    warmup_steps=warmup_steps,
-    max_steps=max_steps,
-    weight_decay=weight_decay,
-    learning_rate=learning_rate,
-)
-trainer.train()
+
+if __name__ == '__main__':
+    data_name = len(sys.argv) > 1 and sys.argv[1] or MATH_REASONING_DATA_NAME
+    resume_from_checkpoint = len(sys.argv) > 2 and sys.argv[2] or False
+    trainer = BaseTrainer(
+        "baseline_gpt2",
+        model,
+        total_batch_size=total_batch_size,
+        B=B,
+        T=T,
+        max_lr=max_lr,
+        min_lr=min_lr,
+        warmup_steps=warmup_steps,
+        max_steps=max_steps,
+        weight_decay=weight_decay,
+        learning_rate=learning_rate,
+        data_name=data_name,
+    )
+    trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 0)
