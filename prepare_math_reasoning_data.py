@@ -8,9 +8,10 @@ def content_fetcher1(doc):
 def content_fetcher2(doc):
     return doc["text"]
 
+MATH_REASONING_DATA_NAME = "reasoningtokens"
 
 data_preparer = BaseDataPreparer(
-    "reasoningtokens",
+    MATH_REASONING_DATA_NAME,
     [
         DatasetConfig(
             "ajibawa-2023/Maths-College",
@@ -20,6 +21,6 @@ data_preparer = BaseDataPreparer(
     ],
 )
 
-# data_preparer.prepare()
+data_preparer.prepare()
 
 data_preparer.split(SplitConfig(8, 1, 1))

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import List, Dict
 from functools import partial
 import re 
+from data_file_utils import DataFileUtils, Split
 
 
 @dataclass
@@ -29,9 +30,6 @@ class SplitConfig:
 # This is the base class for all data preparers. It is responsible for preparing the data for the model.
 class BaseDataPreparer:
     _shared_size = int(1e8)  # 100M tokens per shard
-    _base_path = "/tmp/lmsmall"
-    _base_dataset_path = _base_path + "/datasets"
-    _base_token_path = _base_path + "/tokens"
 
     def __init__(
         self,
@@ -46,12 +44,9 @@ class BaseDataPreparer:
             dataset_config_list (List[DatasetConfig]): A list of dataset configurations.
             tokenizer (str, optional): The tokenizer to use. Defaults to "gpt2".
         """
-        self._data_name = data_name
+        self._data_file_utils = DataFileUtils(data_name)
         self._encoder = tiktoken.get_encoding(tokenizer)
         self._dataset_config_list = dataset_config_list
-
-    def getTokenDir(self):
-        return self._base_token_path
 
     def _tokenize(self, doc: Dict, data_keys: List[str]) -> np.ndarray:
         # tokenizes a single document and returns a numpy array of uint16 tokens
@@ -71,13 +66,8 @@ class BaseDataPreparer:
     def __write_datafile(self, filename, tokens_np):
         np.save(filename, tokens_np)
 
-    def __getTokenFileName(self, shard_index):
-        return os.path.join(
-            self._base_token_path, f"{self._data_name}_{shard_index:06d}"
-        )
-
     def prepare(self):
-        os.makedirs(self._base_token_path, exist_ok=True)
+        os.makedirs(DataFileUtils.base_token_path, exist_ok=True)
         # tokenize all documents and write output shards, each of shard_size tokens (last shard has remainder)
         nprocs = max(1, os.cpu_count() // 2)
         with mp.Pool(nprocs) as pool:
@@ -90,7 +80,7 @@ class BaseDataPreparer:
                 fw = load_dataset(
                     dataset_config.dataset_name,
                     split=dataset_config.dataset_split,
-                    cache_dir=self._base_dataset_path,
+                    cache_dir=DataFileUtils.base_dataset_path,
                 )
                 for tokens in pool.imap(
                     partial(self._tokenize, data_keys=dataset_config.data_keys),
@@ -112,7 +102,7 @@ class BaseDataPreparer:
                         progress_bar.update(len(tokens))
                     else:
                         # write the current shard and start a new one
-                        filename = self.__getTokenFileName(shard_index)
+                        filename = self._data_file_utils.createTokenFileNameWithoutSplit(shard_index)
                         # split the document into whatever fits in this shard; the remainder goes to next one
                         remainder = BaseDataPreparer._shared_size - token_count
                         progress_bar.update(remainder)
@@ -128,7 +118,7 @@ class BaseDataPreparer:
 
             # write any remaining tokens as the last shard
             if token_count != 0:
-                filename = self.__getTokenFileName(shard_index)
+                filename = self._data_file_utils.createTokenFileNameWithoutSplit(shard_index)
                 self.__write_datafile(filename, all_tokens_np[:token_count])
 
     # Split the data into train, validation and test sets
@@ -140,11 +130,8 @@ class BaseDataPreparer:
             + split_config.testing_data_partition
             == 10
         ), "The sum of the training, validation and testing data percentages must be 10"
-        matching_files = Path(self._base_token_path).glob(f"{self._data_name}_*.npy")
-        # Rename the files to remove the split suffix
-        for file in matching_files:
-            file.rename(Path(f"{file.parent}/{re.sub('_testing|_training|_validation', '', file.stem)}.npy"))
-        matching_files = Path(self._base_token_path).glob(f"{self._data_name}_*.npy")
+        self._data_file_utils.removeSplitSuffix()
+        matching_files = self.fetchDataFiles()
         validation_and_training_partition = (
             split_config.validation_data_partition
             + split_config.training_data_partition
@@ -152,11 +139,11 @@ class BaseDataPreparer:
         for i, file in enumerate(matching_files):
             rem = i % 10
             if rem < split_config.training_data_partition:
-                split = "training"
+                split = Split.TRAIN
             elif rem < validation_and_training_partition:
-                split = "validation"
+                split = Split.VALIDATION
             else:
-                split = "testing"
+                split = Split.TEST
             new_file_name = Path(f"{file.parent}/{file.stem}_{split}.npy") 
             print(f"renaming {file.name} to {new_file_name}")   
             file.rename(new_file_name)

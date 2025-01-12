@@ -9,7 +9,7 @@ It contains following models
 - A transformer based model with multiple layers sharing same weights at the beginning and diverging as training going on. See [progressive_diverging](PROGRESSIVE_DIVERGING.md)
 
 # Disclaimer
-My main goal here is to practice building machine learning model with my novel ideas in short term. It is NOT for serious research purpose. Nor are the models well trained since modern language model training requires large amount of time and computation resource which isn't affordable for a personal side project.  And given the models are too large, their hyper parameters won't be tuned and compared using validation dataset and tested using testing dataset. The models are only trained on training dataset once and tested on validation dataset.  
+My main goal here is to practice building machine learning model with my novel ideas in short term. It is NOT for serious research purpose. Nor are the models well trained since modern language model training requires large amount of time and computation resource which isn't affordable for a personal side project.  And given the models are too large, their hyper parameters won't be tuned and compared using validation dataset. The models are only trained on training dataset once and tested on test dataset.  
 
 
 
