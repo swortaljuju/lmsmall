@@ -13,6 +13,7 @@ from torch.distributed import init_process_group, destroy_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 import tiktoken
+import matplotlib.pyplot as plt
 
 # -----------------------------------------------------------------------------
 # simple launch:
@@ -185,6 +186,11 @@ class BaseTrainer:
     def __prepare_log_file(self):
         # create the log directory we will write checkpoints to and log to
         os.makedirs(self.base_checkpoint_path, exist_ok=True)
+        with open(self.__get_checkpoint_path(), "a") as f:
+            pass
+        os.makedirs(self.base_log_path, exist_ok=True)
+        with open(self.__get_log_file_path(), "a") as f:
+            pass
 
     def __get_log_file_path(self) -> str:
         return os.path.join(self.base_log_path, f"{self.__model_name}_log.txt")
@@ -197,14 +203,14 @@ class BaseTrainer:
     def train(self, resume_from_checkpoint: bool, warmup_steps: int, max_steps: int):
         log_path = self.__get_log_file_path()
         checkpoint_path = self.__get_checkpoint_path()
-        loss_array = []
+        loss_per_step = []
         start_step = 0
         if resume_from_checkpoint:
             checkpoint = torch.load(checkpoint_path, weights_only=True)
             self.__raw_model.load_state_dict(checkpoint["model_state_dict"])
             self.__optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            start_step = checkpoint["step"]
-            loss_array = checkpoint["loss_array"]
+            loss_per_step = checkpoint["loss_per_step"]
+            start_step = max(loss_per_step.keys())
         else:
             # delete the log file and start training from beginning
             os.remove(log_path)
@@ -237,7 +243,7 @@ class BaseTrainer:
                 loss.backward()
             if self.__ddp:
                 dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
-            loss_array.append(loss_accum.item())
+            loss_per_step[step] = loss_accum.item()
             # determine and set the learning rate for this iteration
             lr = self.__get_lr(step, warmup_steps, max_steps)
             for param_group in self.__optimizer.param_groups:
@@ -245,20 +251,20 @@ class BaseTrainer:
             self.__optimizer.step()
             torch.cuda.synchronize()  # wait for the GPU to finish work
             self.__log_and_checkpoint(
-                step, step == max_steps - 1, step_start_time, loss_array, lr
+                step, step == max_steps - 1, step_start_time, loss_per_step, lr
             )
 
         if self.__ddp:
             destroy_process_group()
         
-        self.plot_training_loss_curve(loss_array)    
+        self.plot_training_loss_curve(loss_per_step)    
 
     def __log_and_checkpoint(
         self,
         step: int,
         is_last_step: bool,
         step_start_time: int,
-        loss_array: list[float],
+        loss_per_step: dict[int, float],
         learning_rate: float,
     ):
         # once in a while checkpoint the model
@@ -269,8 +275,7 @@ class BaseTrainer:
                 "model_state_dict": self.__raw_model.state_dict(),
                 "optimizer_state_dict": self.__optimizer.state_dict(),
                 "config": self.__raw_model.config,
-                "step": step,
-                "loss_array": loss_array,
+                "loss_per_step": loss_per_step,
             }
             # remove the old checkpoint file if it exists
             os.remove(checkpoint_path)
@@ -286,11 +291,13 @@ class BaseTrainer:
         tokens_per_sec = tokens_processed / dt
         norm = torch.nn.utils.clip_grad_norm_(self.__model.parameters(), 1.0)
         if self.__master_process:
-            log_txt = f"step {step:5d} | loss: {loss_array[-1]:.6f} | lr {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}"
-            print(log_txt)
-            with open(self.__get_log_file_path(), "a") as f:
-                f.write(log_txt)
-
+            self.__print_and_log(f"step {step:5d} | loss: {loss_per_step[step]:.6f} | lr {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}\n")
+                
+    def __print_and_log(self, log_text: str):
+        print(log_text)
+        with open(self.__get_log_file_path(), "a") as f:
+            f.write(log_text)
+    
     def train_and_test(
         self,
         resume_from_checkpoint: bool,
@@ -304,15 +311,28 @@ class BaseTrainer:
 
     def test(self, max_steps: int):
         # calculate test loss
-        pass
-    
-    def plot_training_loss_curve(self, loss_array: list[float]):
-        # todo 
+        self.__model.eval()
+        with torch.no_grad():
+            test_loss_accum = 0.0
+            for _ in range(max_steps):
+                x, y = self.__test_loader.next_batch()
+                x, y = x.to(self.__device), y.to(self.__device)
+                with torch.autocast(device_type=self.__device_type, dtype=torch.bfloat16):
+                    logits, loss = self.__model(x, y)
+                loss = loss / max_steps
+                test_loss_accum += loss.detach()
+            if self.__ddp:
+                dist.all_reduce(test_loss_accum, op=dist.ReduceOp.AVG)
         if self.__master_process:
-            import matplotlib.pyplot as plt
-            plt.plot(loss_array)
+            self.__print_and_log(f"test loss: {test_loss_accum.item():.4f}\n")
+    
+    def plot_training_loss_curve(self, loss_per_step: dict[int, float]):
+        if self.__master_process:
+            loss_array = sorted([[k, v] for k, v in loss_per_step.items()])
+            plt.plot(zip(*loss_array))
             plt.xlabel("Steps")
             plt.ylabel("Loss")
+            plt.yscale("log")
             plt.title("Training Loss Curve")
             plt.show()
         pass
