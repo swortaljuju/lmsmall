@@ -48,3 +48,15 @@ class MLP(nn.Module):
         x = self.c_proj(x)
         return x
 
+class AttentionMlpBlock(nn.Module):
+    def __init__(self, n_embd: int, n_head: int):
+        super().__init__()
+        self.ln_1 = nn.LayerNorm(n_embd)
+        self.attn = CausalSelfAttention(n_embd, n_head)
+        self.ln_2 = nn.LayerNorm(n_embd)
+        self.mlp = MLP(n_embd)
+
+    def forward(self, x):
+        x = x + self.attn(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+        return x

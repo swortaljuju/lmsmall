@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
-from components import CausalSelfAttention, MLP
+from components import AttentionMlpBlock
 from base_trainer import BaseTrainer
 import sys
 from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
@@ -11,20 +11,6 @@ from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
 
 # Baseline GPT2 model from https://github.com/karpathy/build-nanogpt with some modifications
 # Assume the model is only trained on CUDA devices
-class Block(nn.Module):
-
-    def __init__(self, config):
-        super().__init__()
-        self.ln_1 = nn.LayerNorm(config.n_embd)
-        self.attn = CausalSelfAttention(config.n_embd, config.n_head)
-        self.ln_2 = nn.LayerNorm(config.n_embd)
-        self.mlp = MLP(config.n_embd)
-
-    def forward(self, x):
-        x = x + self.attn(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))
-        return x
-
 
 @dataclass
 class GPTConfig:
@@ -33,10 +19,10 @@ class GPTConfig:
         50257  # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     )
     n_layer: int = 12  # number of layers
-    n_head: int = 12  # number of heads
+    n_head: int = 6  # number of heads. 6 instead of 12 to reduce training time
     n_embd: int = 142  # embedding dimension. 142 instead of 768 to reduce training time
 
-
+# total 8.6m parameters
 class GPT(nn.Module):
 
     def __init__(self, config):
@@ -47,7 +33,7 @@ class GPT(nn.Module):
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
-                h=nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+                h=nn.ModuleList([AttentionMlpBlock(config.n_embd, config.n_head) for _ in range(config.n_layer)]),
                 ln_f=nn.LayerNorm(config.n_embd),
             )
         )
@@ -124,4 +110,4 @@ if __name__ == '__main__':
         learning_rate=learning_rate,
         data_name=data_name,
     )
-    trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 0)
+    trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)

@@ -12,7 +12,6 @@ from dataloader import DataLoaderLite, Split
 from torch.distributed import init_process_group, destroy_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
-import tiktoken
 import matplotlib.pyplot as plt
 
 # -----------------------------------------------------------------------------
@@ -56,7 +55,6 @@ class BaseTrainer:
         self.__initialize_ddp()
         self.__device_type = "cuda"
         torch.cuda.manual_seed(1337)
-        self.__enc = tiktoken.get_encoding("gpt2")
         self.__total_batch_size = total_batch_size
         self.__micro_batch_size = B
         self.__sequence_length = T
