@@ -10,17 +10,18 @@ def content_fetcher2(doc):
 
 MATH_REASONING_DATA_NAME = "reasoningtokens"
 
-data_preparer = BaseDataPreparer(
-    MATH_REASONING_DATA_NAME,
-    [
-        DatasetConfig(
-            "ajibawa-2023/Maths-College",
-            data_keys = ["instruction", "output"],
-        ),
-        DatasetConfig("open-web-math/open-web-math", data_keys=["text"]),
-    ],
-)
+if __name__ == '__main__':
+    data_preparer = BaseDataPreparer(
+        MATH_REASONING_DATA_NAME,
+        [
+            DatasetConfig(
+                "ajibawa-2023/Maths-College",
+                data_keys = ["instruction", "output"],
+            ),
+            DatasetConfig("open-web-math/open-web-math", data_keys=["text"]),
+        ],
+    )
 
-data_preparer.prepare()
+    data_preparer.prepare()
 
-data_preparer.split(SplitConfig(8, 1, 1))
+    data_preparer.split(SplitConfig(8, 1, 1))

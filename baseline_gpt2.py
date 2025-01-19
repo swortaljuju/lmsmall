@@ -4,8 +4,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from components import AttentionMlpBlock
 from base_trainer import BaseTrainer
-import sys
-from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
+from common_utils import setup_args_parser, setup_logger
 
 # -----------------------------------------------------------------------------
 
@@ -22,10 +21,12 @@ class GPTConfig:
     n_head: int = 6  # number of heads. 6 instead of 12 to reduce training time
     n_embd: int = 142  # embedding dimension. 142 instead of 768 to reduce training time
 
+model_name = "baseline_gpt2"
+
 # total 8.6m parameters
 class GPT(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config: GPTConfig, log_level: int = 0):
         super().__init__()
         self.config = config
 
@@ -44,6 +45,8 @@ class GPT(nn.Module):
 
         # init params
         self.apply(self._init_weights)
+        
+        self.__logger = setup_logger("baseline_gpt2", model_name, log_level)[1]
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -67,9 +70,11 @@ class GPT(nn.Module):
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (B, T, n_embd)
         x = tok_emb + pos_emb
+        self.__logger.debug(f"shape after embedding {x.shape}")
         # forward the blocks of the transformer
         for block in self.transformer.h:
             x = block(x)
+        self.__logger.debug(f"shape after transformer {x.shape}")    
         # forward the final layernorm and the classifier
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)  # (B, T, vocab_size)
@@ -82,8 +87,6 @@ class GPT(nn.Module):
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 B = 64  # micro batch size
 T = 1024  # sequence length
-# create model
-model = GPT(GPTConfig(vocab_size=50304))
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
@@ -94,11 +97,13 @@ weight_decay = 0.1
 learning_rate = 6e-4
 
 if __name__ == '__main__':
-    data_name = len(sys.argv) > 1 and sys.argv[1] or MATH_REASONING_DATA_NAME
-    resume_from_checkpoint = len(sys.argv) > 2 and sys.argv[2] or False
+    parser = setup_args_parser()
+    args = parser.parse_args()
+    data_name = args.data_name
+    resume_from_checkpoint = args.resume_from_checkpoint
     trainer = BaseTrainer(
         "baseline_gpt2",
-        model,
+        GPT(GPTConfig(vocab_size=50304), args.loglevel),
         total_batch_size=total_batch_size,
         B=B,
         T=T,
@@ -109,5 +114,6 @@ if __name__ == '__main__':
         weight_decay=weight_decay,
         learning_rate=learning_rate,
         data_name=data_name,
+        log_level=args.loglevel,
     )
     trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)

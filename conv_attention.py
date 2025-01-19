@@ -5,7 +5,7 @@ from torch.nn import functional as F
 from components import AttentionMlpBlock
 from base_trainer import BaseTrainer
 import sys
-from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
+from common_utils import setup_args_parser, setup_logger
 
 # -----------------------------------------------------------------------------
 
@@ -45,6 +45,7 @@ from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
 EMBEDDING_FAN_IN_FACTOR = 2
 SEQUENCE_FAN_IN_FACTOR = 4
 
+model_name = "conv_attention"
 
 # Compress input from long sequence with small embedding into short sequence with large embedding
 class Compressor(nn.Module):
@@ -91,7 +92,7 @@ class Config:
 
 # total params: 9.19m
 class ConvAttentionModel(nn.Module):
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, log_level: int = 0):
         super().__init__()
         assert (
             config.initial_block_size % pow(SEQUENCE_FAN_IN_FACTOR, 3) == 0
@@ -113,6 +114,8 @@ class ConvAttentionModel(nn.Module):
 
         # init params
         self.apply(self._init_weights)
+        self.__logger = setup_logger("ConvAttentionModel", model_name, log_level)[1]
+        self.__logger.debug(f"conv attention layers: {self.transformer.conv_attention}")
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -154,7 +157,10 @@ class ConvAttentionModel(nn.Module):
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (B, T, n_embd)
-        x = self.transformer.conv_attention(tok_emb + pos_emb)
+        x = tok_emb + pos_emb
+        self.__logger.debug(f"shape after embedding {x.shape}")
+        x = self.transformer.conv_attention(x)
+        self.__logger.debug(f"shape after conv_attention {x.shape}")
         # forward the final layernorm and the classifier
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)  # (B, T, vocab_size)
@@ -167,8 +173,6 @@ class ConvAttentionModel(nn.Module):
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 B = 64  # micro batch size
 T = 1024  # sequence length
-# create model
-model = ConvAttentionModel(Config(vocab_size=50304))
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
@@ -179,11 +183,13 @@ weight_decay = 0.1
 learning_rate = 6e-4
 
 if __name__ == "__main__":
-    data_name = len(sys.argv) > 1 and sys.argv[1] or MATH_REASONING_DATA_NAME
-    resume_from_checkpoint = len(sys.argv) > 2 and sys.argv[2] or False
+    parser = setup_args_parser()
+    args = parser.parse_args()
+    data_name = args.data_name
+    resume_from_checkpoint = args.resume_from_checkpoint
     trainer = BaseTrainer(
-        "conv_attention",
-        model,
+        model_name,
+        ConvAttentionModel(Config(vocab_size=50304), args.loglevel),
         total_batch_size=total_batch_size,
         B=B,
         T=T,
@@ -194,5 +200,6 @@ if __name__ == "__main__":
         weight_decay=weight_decay,
         learning_rate=learning_rate,
         data_name=data_name,
+        log_level=args.loglevel,
     )
     trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)

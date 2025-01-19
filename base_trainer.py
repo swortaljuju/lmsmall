@@ -13,6 +13,7 @@ from torch.distributed import init_process_group, destroy_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 import matplotlib.pyplot as plt
+from common_utils import setup_logger
 
 # -----------------------------------------------------------------------------
 # simple launch:
@@ -23,7 +24,6 @@ import matplotlib.pyplot as plt
 
 class BaseTrainer:
     base_checkpoint_path = "/tmp/lmsmall/checkpoints"
-    base_log_path = "/tmp/lmsmall/logs"
 
     def __init__(
         self,
@@ -37,6 +37,7 @@ class BaseTrainer:
         weight_decay: float,
         learning_rate: float,
         data_name: str,
+        log_level: int,
     ):
         """
         Args:
@@ -107,7 +108,10 @@ class BaseTrainer:
         # optimize!
         self.__optimizer = self.__configure_optimizers(weight_decay, learning_rate)
 
-        self.__prepare_log_file()
+        self.__prepare_checkpoint_file()
+        log_file_path, logger = setup_logger('base_trainer', model_name, log_level)
+        self.__logger = logger
+        self.__log_file_path = log_file_path
 
     def __initialize_ddp(self):
         # set up DDP (distributed data parallel).
@@ -181,17 +185,11 @@ class BaseTrainer:
         )  # coeff starts at 1 and goes to 0
         return self.__min_lr + coeff * (self.__max_lr - self.__min_lr)
 
-    def __prepare_log_file(self):
+    def __prepare_checkpoint_file(self):
         # create the log directory we will write checkpoints to and log to
         os.makedirs(self.base_checkpoint_path, exist_ok=True)
         with open(self.__get_checkpoint_path(), "a") as f:
             pass
-        os.makedirs(self.base_log_path, exist_ok=True)
-        with open(self.__get_log_file_path(), "a") as f:
-            pass
-
-    def __get_log_file_path(self) -> str:
-        return os.path.join(self.base_log_path, f"{self.__model_name}_log.txt")
 
     def __get_checkpoint_path(self) -> str:
         return os.path.join(
@@ -199,7 +197,6 @@ class BaseTrainer:
         )
 
     def train(self, resume_from_checkpoint: bool, warmup_steps: int, max_steps: int):
-        log_path = self.__get_log_file_path()
         checkpoint_path = self.__get_checkpoint_path()
         loss_per_step = []
         start_step = 0
@@ -211,7 +208,7 @@ class BaseTrainer:
             start_step = max(loss_per_step.keys())
         else:
             # delete the log file and start training from beginning
-            os.remove(log_path)
+            os.remove(self.__log_file_path)
             os.remove(checkpoint_path)
 
         for step in range(start_step, max_steps):
@@ -233,6 +230,7 @@ class BaseTrainer:
                     device_type=self.__device_type, dtype=torch.bfloat16
                 ):
                     logits, loss = self.__model(x, y, training_progress)
+                    self.__logger.debug(f"loss shape: {loss.shape}, logits shape: {logits.shape}")
                 # we have to scale the loss to account for gradient accumulation,
                 # because the gradients just add on each successive backward().
                 # addition of gradients corresponds to a SUM in the objective, but
@@ -290,12 +288,7 @@ class BaseTrainer:
         tokens_per_sec = tokens_processed / dt
         norm = torch.nn.utils.clip_grad_norm_(self.__model.parameters(), 1.0)
         if self.__master_process:
-            self.__print_and_log(f"step {step:5d} | loss: {loss_per_step[step]:.6f} | lr {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}\n")
-                
-    def __print_and_log(self, log_text: str):
-        print(log_text)
-        with open(self.__get_log_file_path(), "a") as f:
-            f.write(log_text)
+            self.__logger.info(f"step {step:5d} | loss: {loss_per_step[step]:.6f} | lr {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}\n")
     
     def train_and_test(
         self,
@@ -323,7 +316,7 @@ class BaseTrainer:
             if self.__ddp:
                 dist.all_reduce(test_loss_accum, op=dist.ReduceOp.AVG)
         if self.__master_process:
-            self.__print_and_log(f"test loss: {test_loss_accum.item():.4f}\n")
+            self.__logger.info(f"test loss: {test_loss_accum.item():.4f}\n")
     
     def plot_training_loss_curve(self, loss_per_step: dict[int, float]):
         if self.__master_process:

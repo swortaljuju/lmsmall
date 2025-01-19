@@ -11,8 +11,7 @@ from components import (
     MLP,
 )
 from base_trainer import BaseTrainer
-import sys
-from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
+from common_utils import setup_args_parser, setup_logger
 
 # -----------------------------------------------------------------------------
 # Progressive Diverging Model
@@ -32,6 +31,8 @@ from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
 # Each block's parameters duplicated from corresponding Stage 2's block.
 # And attention parameters are updated using LORA technique and the feedforward parameters are updated as usual.
 # Assume the model is only trained on CUDA devices
+
+model_name = "progressive_diverging"
 
 class Stage2AttentionMlpLoRABlock(nn.Module):
     def __init__(
@@ -103,7 +104,7 @@ class Config:
 # total 8.6m parameters
 class ProgressiveDiverging(nn.Module):
 
-    def __init__(self, config):
+    def __init__(self, config: Config, log_level: int = 0):
         super().__init__()
         self.config = config
 
@@ -120,6 +121,7 @@ class ProgressiveDiverging(nn.Module):
 
         # init params
         self.apply(self._init_weights)
+        self.__logger = setup_logger("progressive_diverging", model_name, log_level)[1]
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -143,11 +145,13 @@ class ProgressiveDiverging(nn.Module):
         pos_emb = self.wpe(pos)  # position embeddings of shape (T, n_embd)
         tok_emb = self.wte(idx)  # token embeddings of shape (B, T, n_embd)
         x = tok_emb + pos_emb
+        self.__logger.debug(f"input embeddings shape: {x.shape}")
         # forward the blocks of the transformer
         if training_progress < 1 / 3:
             for block in self.stage_1:
                 for _ in range(4):
                     x = block(x)
+            self.__logger.debug(f"after stage 1: {x.shape}")
         elif training_progress < 2 / 3:
             if self.stage_2 is None:
                 self.stage_2 = nn.ModuleList(
@@ -160,9 +164,11 @@ class ProgressiveDiverging(nn.Module):
                         for idx in range(6)
                     ]
                 )
+                self.__logger.debug(f"stage 2 model: {self.stage_2}")
             for block in self.stage_2:
                 for _ in range(2):
                     x = block(x)
+            self.__logger.debug(f"after stage 2: {x.shape}")
         else:
             if self.stage_3 is None:
                 self.stage_3 = nn.ModuleList(
@@ -175,8 +181,10 @@ class ProgressiveDiverging(nn.Module):
                         for idx in range(12)
                     ]
                 )
+                self.__logger.debug(f"stage 3 model: {self.stage_3}")
             for block in self.stage_3:
                 x = block(x)
+            self.__logger.debug(f"after stage 3: {x.shape}")
 
         # forward the final layernorm and the classifier
         x = self.ln_f(x)
@@ -191,7 +199,6 @@ total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 B = 64  # micro batch size
 T = 1024  # sequence length
 # create model
-model = ProgressiveDiverging(Config(vocab_size=50304))
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
@@ -202,11 +209,13 @@ weight_decay = 0.1
 learning_rate = 6e-4
 
 if __name__ == "__main__":
-    data_name = len(sys.argv) > 1 and sys.argv[1] or MATH_REASONING_DATA_NAME
-    resume_from_checkpoint = len(sys.argv) > 2 and sys.argv[2] or False
+    parser = setup_args_parser()
+    args = parser.parse_args()
+    data_name = args.data_name
+    resume_from_checkpoint = args.resume_from_checkpoint
     trainer = BaseTrainer(
         "baseline_gpt2",
-        model,
+        ProgressiveDiverging(Config(vocab_size=50304). args.loglevel),
         total_batch_size=total_batch_size,
         B=B,
         T=T,
@@ -217,5 +226,6 @@ if __name__ == "__main__":
         weight_decay=weight_decay,
         learning_rate=learning_rate,
         data_name=data_name,
+        log_level=args.loglevel,
     )
     trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)
