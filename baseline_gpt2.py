@@ -56,7 +56,7 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, training_progress: float = 0.0):
         # idx is of shape (B, T)
         B, T = idx.size()
         assert (

@@ -220,6 +220,7 @@ class BaseTrainer:
             self.__model.train()
             self.__optimizer.zero_grad()
             loss_accum = 0.0
+            training_progress = step / max_steps
             for micro_step in range(self.__grad_accum_steps):
                 x, y = self.__train_loader.next_batch()
                 x, y = x.to(self.__device), y.to(self.__device)
@@ -231,7 +232,7 @@ class BaseTrainer:
                 with torch.autocast(
                     device_type=self.__device_type, dtype=torch.bfloat16
                 ):
-                    logits, loss = self.__model(x, y)
+                    logits, loss = self.__model(x, y, training_progress)
                 # we have to scale the loss to account for gradient accumulation,
                 # because the gradients just add on each successive backward().
                 # addition of gradients corresponds to a SUM in the objective, but

@@ -144,7 +144,7 @@ class ConvAttentionModel(nn.Module):
             layers.append(AttentionMlpBlock(n_embedding, config.n_head))
         return layers
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, training_progress: float = 0.0):
         # idx is of shape (B, T)
         B, T = idx.size()
         assert (
