@@ -26,7 +26,7 @@ def setup_args_parser():
     parser.add_argument(
         "-log",
         "--loglevel",
-        default="info",
+        default="INFO",
     )
     parser.add_argument(
         "--data_name",
@@ -34,5 +34,6 @@ def setup_args_parser():
     )
     parser.add_argument(
         "--resume_from_checkpoint",
-        default="False",
+        default=False,
     )
+    return parser

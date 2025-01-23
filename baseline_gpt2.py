@@ -19,7 +19,7 @@ class GPTConfig:
     )
     n_layer: int = 12  # number of layers
     n_head: int = 6  # number of heads. 6 instead of 12 to reduce training time
-    n_embd: int = 142  # embedding dimension. 142 instead of 768 to reduce training time
+    n_embd: int = 192  # embedding dimension. 142 instead of 768 to reduce training time
 
 model_name = "baseline_gpt2"
 
@@ -85,8 +85,8 @@ class GPT(nn.Module):
 
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
-B = 64  # micro batch size
-T = 1024  # sequence length
+B = 8 #64  # micro batch size
+T = 512 # 1024  # sequence length
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
@@ -109,8 +109,6 @@ if __name__ == '__main__':
         T=T,
         max_lr=max_lr,
         min_lr=min_lr,
-        warmup_steps=warmup_steps,
-        max_steps=max_steps,
         weight_decay=weight_decay,
         learning_rate=learning_rate,
         data_name=data_name,

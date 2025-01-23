@@ -33,7 +33,7 @@ class DataFileUtils:
         if split is None:
             return Path(self.base_token_path).glob(f"{self._data_name}_*.npy")
         else:
-            return Path(self.base_token_path).glob(f"{self._data_name}_*_{split}.npy")
+            return Path(self.base_token_path).glob(f"{self._data_name}_*_{split.value}.npy")
 
     def removeSplitSuffix(self):
         matching_files = self.fetchDataFiles()

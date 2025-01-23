@@ -136,7 +136,7 @@ class BaseTrainer:
             self.__ddp_world_size = 1
             self.__master_process = True
             self.__device = "cuda"
-            print(f"using device: {self._device}")
+            print(f"using device: {self.__device}")
 
     def __configure_optimizers(self, weight_decay: float, learning_rate: float):
         # start with all of the candidate parameters (that require grad)
@@ -152,7 +152,7 @@ class BaseTrainer:
         ]
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        if self._master_process:
+        if self.__master_process:
             print(
                 f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters"
             )

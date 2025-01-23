@@ -24,9 +24,9 @@ class DataLoaderLite:
         
         # get the shard filenames
         self.__shards = sorted([ p.resolve() for p in self.__data_file_utils.fetchDataFiles(split) ])
-        assert len(self.__shards) > 0, f"no shards found for split {split}"
+        assert len(self.__shards) > 0, f"no shards found for split {split.value}"
         if master_process:
-            print(f"found {len(self.__shards)} shards for split {split}")
+            print(f"found {len(self.__shards)} shards for split {split.value}")
         self.reset()
 
     def reset(self):

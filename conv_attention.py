@@ -195,8 +195,6 @@ if __name__ == "__main__":
         T=T,
         max_lr=max_lr,
         min_lr=min_lr,
-        warmup_steps=warmup_steps,
-        max_steps=max_steps,
         weight_decay=weight_decay,
         learning_rate=learning_rate,
         data_name=data_name,
