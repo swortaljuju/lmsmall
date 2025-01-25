@@ -193,8 +193,6 @@ class BaseTrainer:
     def __prepare_checkpoint_file(self):
         # create the log directory we will write checkpoints to and log to
         os.makedirs(self.base_checkpoint_path, exist_ok=True)
-        with open(self.__get_checkpoint_path(), "a") as f:
-            pass
 
     def __get_checkpoint_path(self) -> str:
         return os.path.join(
@@ -205,23 +203,27 @@ class BaseTrainer:
         checkpoint_path = self.__get_checkpoint_path()
         loss_per_step = {}
         start_step = 0
-        if resume_from_checkpoint:
-            checkpoint = torch.load(checkpoint_path, weights_only=True)
-            self.__raw_model.load_state_dict(checkpoint["model_state_dict"])
-            self.__optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            loss_per_step = checkpoint["loss_per_step"]
-            start_step = max(loss_per_step.keys())
-        else:
-            # delete the log file and start training from beginning
-            os.remove(checkpoint_path)
-
+        if os.path.exists(checkpoint_path):
+            if resume_from_checkpoint:
+                checkpoint = torch.load(checkpoint_path, weights_only=True)
+                self.__logger.info(f"resuming from checkpoint {checkpoint}")
+                self.__raw_model.load_state_dict(checkpoint["model_state_dict"])
+                self.__optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                loss_per_step = checkpoint["loss_per_step"]
+                start_step = max(loss_per_step.keys()) + 1
+            else:
+                # delete the checkpoint file and start training from beginning
+                os.remove(checkpoint_path)
+        checkpoint_steps = [i for i in range(0, max_steps, max_steps // 20)]
+        if checkpoint_steps[-1] != max_steps - 1:
+            checkpoint_steps.append(max_steps - 1)
         for step in range(start_step, max_steps):
             step_start_time = time.time()
             # do one step of the optimization
             self.__model.train()
             self.__optimizer.zero_grad()
             loss_accum = 0.0
-            training_progress = step / max_steps
+            training_progress = (step + 1) / max_steps
             for micro_step in range(self.__grad_accum_steps):
                 x, y = self.__train_loader.next_batch()
                 x, y = x.to(self.__device), y.to(self.__device)
@@ -252,7 +254,7 @@ class BaseTrainer:
             self.__optimizer.step()
             torch.cuda.synchronize()  # wait for the GPU to finish work
             self.__log_and_checkpoint(
-                step, step == max_steps - 1, step_start_time, loss_per_step, lr
+                step, checkpoint_steps, step_start_time, loss_per_step, lr
             )
 
         if self.__ddp:
@@ -263,19 +265,18 @@ class BaseTrainer:
     def __log_and_checkpoint(
         self,
         step: int,
-        is_last_step: bool,
+        checkpoint_steps: list[int],
         step_start_time: int,
         loss_per_step: dict[int, float],
         learning_rate: float,
     ):
         # once in a while checkpoint the model
-        if (step % 250 == 0 or is_last_step) and self.__master_process:
+        if (step in checkpoint_steps) and self.__master_process:
             # optionally write model checkpoints
             checkpoint_path = self.__get_checkpoint_path()
             checkpoint = {
                 "model_state_dict": self.__raw_model.state_dict(),
                 "optimizer_state_dict": self.__optimizer.state_dict(),
-                "config": self.__raw_model.config,
                 "loss_per_step": loss_per_step,
             }
             if os.path.exists(checkpoint_path):

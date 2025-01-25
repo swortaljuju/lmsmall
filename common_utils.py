@@ -3,6 +3,7 @@ import logging
 import os
 from prepare_math_reasoning_data import MATH_REASONING_DATA_NAME
 from datetime import datetime
+from typing import Mapping
 
 formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
 BASE_LOG_PATH = "/tmp/lmsmall/logs"
@@ -36,6 +37,11 @@ def setup_args_parser():
     )
     parser.add_argument(
         "--resume_from_checkpoint",
+        "-rc",
         default=False,
     )
     return parser
+
+# Check if a prefix exists in the keys
+def has_prefix(mapping: Mapping, prefix: str) -> bool:
+    return any(key.startswith(prefix) for key in mapping.keys())

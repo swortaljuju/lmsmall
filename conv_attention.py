@@ -117,6 +117,7 @@ class ConvAttentionModel(nn.Module):
         self.apply(self._init_weights)
         self.__logger = setup_logger("ConvAttentionModel", model_name, log_level)
         self.__logger.info(f"model structure {self}")
+        self.__logger.info(f"model config {config}")
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):

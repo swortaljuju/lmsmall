@@ -11,8 +11,11 @@ from components import (
     MLP,
 )
 from base_trainer import BaseTrainer
-from common_utils import setup_args_parser, setup_logger
-
+from common_utils import setup_args_parser, setup_logger, has_prefix
+from typing import (
+    Any,
+    Mapping,
+)
 # -----------------------------------------------------------------------------
 # Progressive Diverging Model
 # The training process is divided into three stages:
@@ -46,7 +49,8 @@ class Stage2AttentionMlpLoRABlock(nn.Module):
         self.attn = CausalSelfAttention(n_embd, n_head)
         self.ln_2 = nn.LayerNorm(n_embd)
         self.mlp = MLP(n_embd)
-        self.load_state_dict(pretrained_attention_mlp_block.state_dict())
+        if pretrained_attention_mlp_block is not None:
+            self.load_state_dict(pretrained_attention_mlp_block.state_dict())
         # Freeze pretrained attention weights
         for param in  self.attn.parameters():
             param.requires_grad = False
@@ -75,7 +79,8 @@ class Stage3AttentionMlpLoRABlock(nn.Module):
         self.ln_2 = nn.LayerNorm(n_embd)
         self.mlp = MLP(n_embd)
         self.attn_lora = CausalSelfAttentionLoRA(n_embd, n_head)
-        self.load_state_dict(stage2_pretrained_attention_mlp_block.state_dict())
+        if stage2_pretrained_attention_mlp_block is not None:
+            self.load_state_dict(stage2_pretrained_attention_mlp_block.state_dict())
         for param in  self.attn.parameters():
             param.requires_grad = False
         for param in  self.attn_lora.parameters():
@@ -127,6 +132,7 @@ class ProgressiveDiverging(nn.Module):
         self.apply(self._init_weights)
         self.__logger = setup_logger("progressive_diverging", model_name, log_level)
         self.__logger.info(f"model structure {self}")
+        self.__logger.info(f"model config {config}")
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -138,7 +144,42 @@ class ProgressiveDiverging(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
-
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
+    ):
+        device = next(self.parameters()).device
+        if has_prefix(state_dict, "stage_2"):
+            self.__create_stage_2_model(device)
+        if has_prefix(state_dict, "stage_3"):
+            self.__create_stage_3_model(device)    
+        super().load_state_dict(state_dict, strict, assign)
+    
+    def __create_stage_2_model(self, device: str):
+        self.stage_2 = nn.ModuleList(
+                    [
+                        Stage2AttentionMlpLoRABlock(
+                            self.config.n_embd,
+                            self.config.n_head,
+                            self.stage_1[idx // 2],
+                        )
+                        for idx in range(6)
+                    ]
+                )
+        self.stage_2.to(device)
+        self.__logger.info(f"stage 2 model: {self.stage_2}")
+    def __create_stage_3_model(self, device: str):
+        self.stage_3 = nn.ModuleList(
+                    [
+                        Stage3AttentionMlpLoRABlock(
+                            self.config.n_embd,
+                            self.config.n_head,
+                            self.stage_2[idx // 2],
+                        )
+                        for idx in range(12)
+                    ]
+                )
+        self.stage_3.to(device)
+        self.__logger.info(f"stage 3 model: {self.stage_3}")    
     def forward(self, idx, targets=None, training_progress: float = 0.0):
         # idx is of shape (B, T)
         B, T = idx.size()
@@ -159,36 +200,14 @@ class ProgressiveDiverging(nn.Module):
             self.__logger.debug(f"after stage 1: {x.shape}")
         elif training_progress < 2 / 3:
             if not hasattr(self, 'stage_2'):
-                self.stage_2 = nn.ModuleList(
-                    [
-                        Stage2AttentionMlpLoRABlock(
-                            self.config.n_embd,
-                            self.config.n_head,
-                            self.stage_1[idx // 2],
-                        )
-                        for idx in range(6)
-                    ]
-                )
-                self.stage_2.to(device=idx.device)
-                self.__logger.info(f"stage 2 model: {self.stage_2}")
+                self.__create_stage_2_model(idx.device)
             for block in self.stage_2:
                 for _ in range(2):
                     x = block(x)
             self.__logger.debug(f"after stage 2: {x.shape}")
         else:
             if not hasattr(self, 'stage_3'):
-                self.stage_3 = nn.ModuleList(
-                    [
-                        Stage3AttentionMlpLoRABlock(
-                            self.config.n_embd,
-                            self.config.n_head,
-                            self.stage_2[idx // 2],
-                        )
-                        for idx in range(12)
-                    ]
-                )
-                self.stage_3.to(device=idx.device)
-                self.__logger.info(f"stage 3 model: {self.stage_3}")
+                self.__create_stage_3_model(idx.device)
             for block in self.stage_3:
                 x = block(x)
             self.__logger.debug(f"after stage 3: {x.shape}")
@@ -221,7 +240,7 @@ if __name__ == "__main__":
     data_name = args.data_name
     resume_from_checkpoint = args.resume_from_checkpoint
     trainer = BaseTrainer(
-        "baseline_gpt2",
+        model_name,
         ProgressiveDiverging(Config(), args.loglevel),
         total_batch_size=total_batch_size,
         B=B,
