@@ -41,7 +41,6 @@ class CausalSelfAttentionLoRA(nn.Module):
         self.c_attn_lora_a = nn.Linear(n_embd, DEFAULT_LORA_RANK, bias=False)
         self.c_attn_lora_b = nn.Linear(DEFAULT_LORA_RANK, 3 * n_embd, bias=False)
         # output projection
-        self.c_proj.SCALE_INIT = 1
         self.c_proj_lora_a = nn.Linear(n_embd, DEFAULT_LORA_RANK, bias=False)
         self.c_proj_lora_b = nn.Linear(DEFAULT_LORA_RANK, n_embd, bias=False)
         # regularization

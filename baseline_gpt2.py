@@ -90,9 +90,10 @@ total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-max_steps = (
-    19073  # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+training_steps = (
+    20 # 10000
 )
+testing_steps = 250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
@@ -114,4 +115,4 @@ if __name__ == '__main__':
         data_name=data_name,
         log_level=args.loglevel,
     )
-    trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)
+    trainer.train_and_test(resume_from_checkpoint, warmup_steps, training_steps, testing_steps)

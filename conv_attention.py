@@ -98,7 +98,7 @@ class ConvAttentionModel(nn.Module):
         assert (
             config.initial_block_size % pow(SEQUENCE_FAN_IN_FACTOR, 3) == 0
         ), f"initial_block_size must be divisible by ${SEQUENCE_FAN_IN_FACTOR} ^ 3"
-        self.__config = config
+        self.config = config
 
         self.transformer = nn.ModuleDict(
             dict(
@@ -122,7 +122,7 @@ class ConvAttentionModel(nn.Module):
         if isinstance(module, nn.Linear):
             std = 0.02
             if hasattr(module, "SCALE_INIT"):
-                std *= (2 * self.__config.n_layer) ** -0.5
+                std *= (2 * self.config.n_layer) ** -0.5
             torch.nn.init.normal_(module.weight, mean=0.0, std=std)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
@@ -152,8 +152,8 @@ class ConvAttentionModel(nn.Module):
         # idx is of shape (B, T)
         B, T = idx.size()
         assert (
-            T == self.__config.initial_block_size
-        ), f"Cannot forward sequence of length {T}, block size is only {self.__config.initial_block_size}"
+            T == self.config.initial_block_size
+        ), f"Cannot forward sequence of length {T}, block size is only {self.config.initial_block_size}"
         # forward the token and position embeddings
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
@@ -175,9 +175,10 @@ total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-max_steps = (
-    19073  # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+training_steps = (
+    20 # 10000
 )
+testing_steps = 250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
@@ -199,4 +200,4 @@ if __name__ == "__main__":
         data_name=data_name,
         log_level=args.loglevel,
     )
-    trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)
+    trainer.train_and_test(resume_from_checkpoint, warmup_steps, training_steps, testing_steps)

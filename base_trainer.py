@@ -53,6 +53,9 @@ class BaseTrainer:
             data_name: the name of the training and testing data
         """
         assert torch.cuda.is_available()
+        log_file_path, logger = setup_logger('base_trainer', model_name, log_level)
+        self.__logger = logger
+        self.__log_file_path = log_file_path
         self.__initialize_ddp()
         self.__device_type = "cuda"
         torch.cuda.manual_seed(1337)
@@ -68,6 +71,7 @@ class BaseTrainer:
         self.__grad_accum_steps = self.__total_batch_size // (
             B * T * self.__ddp_world_size
         )
+        logger.debug(f"grad_accum_steps: {self.__grad_accum_steps}")
         if self.__master_process:
             print(f"total desired batch size: {total_batch_size}")
             print(
@@ -109,9 +113,7 @@ class BaseTrainer:
         self.__optimizer = self.__configure_optimizers(weight_decay, learning_rate)
 
         self.__prepare_checkpoint_file()
-        log_file_path, logger = setup_logger('base_trainer', model_name, log_level)
-        self.__logger = logger
-        self.__log_file_path = log_file_path
+        
         
         total_params = sum(p.numel() for p in model.parameters())
         logger.debug(f"Total number of parameters: {total_params}")
@@ -132,6 +134,7 @@ class BaseTrainer:
             self.__master_process = (
                 self.__ddp_rank == 0
             )  # this process will do logging, checkpointing etc.
+            self.__logger.debug(f"using DDP with rank {self.__ddp_rank}; ddp_local_rank {self.__ddp_local_rank}; world size {self.__ddp_world_size}")
         else:
             # vanilla, non-DDP run
             self.__ddp_rank = 0
@@ -201,7 +204,7 @@ class BaseTrainer:
 
     def train(self, resume_from_checkpoint: bool, warmup_steps: int, max_steps: int):
         checkpoint_path = self.__get_checkpoint_path()
-        loss_per_step = []
+        loss_per_step = {}
         start_step = 0
         if resume_from_checkpoint:
             checkpoint = torch.load(checkpoint_path, weights_only=True)
@@ -257,7 +260,7 @@ class BaseTrainer:
         if self.__ddp:
             destroy_process_group()
         
-        self.plot_training_loss_curve(loss_per_step)    
+        # self.plot_training_loss_curve(loss_per_step)    
 
     def __log_and_checkpoint(
         self,
@@ -277,8 +280,9 @@ class BaseTrainer:
                 "config": self.__raw_model.config,
                 "loss_per_step": loss_per_step,
             }
-            # remove the old checkpoint file if it exists
-            os.remove(checkpoint_path)
+            if os.path.exists(checkpoint_path):
+                # remove the old checkpoint file if it exists
+                os.remove(checkpoint_path)
             torch.save(checkpoint, checkpoint_path)
         t1 = time.time()
         dt = t1 - step_start_time  # time difference in seconds
@@ -291,7 +295,7 @@ class BaseTrainer:
         tokens_per_sec = tokens_processed / dt
         norm = torch.nn.utils.clip_grad_norm_(self.__model.parameters(), 1.0)
         if self.__master_process:
-            self.__logger.info(f"step {step:5d} | loss: {loss_per_step[step]:.6f} | lr {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}\n")
+            self.__logger.info(f"step {step:5d} | loss: {loss_per_step[step]:.6f} | lr {learning_rate:.4e} | norm: {norm:.4f} | dt: {dt*1000:.2f}ms | tok/sec: {tokens_per_sec:.2f}")
     
     def train_and_test(
         self,
@@ -310,21 +314,23 @@ class BaseTrainer:
         with torch.no_grad():
             test_loss_accum = 0.0
             for _ in range(max_steps):
+                test_start_time = time.time()
                 x, y = self.__test_loader.next_batch()
                 x, y = x.to(self.__device), y.to(self.__device)
                 with torch.autocast(device_type=self.__device_type, dtype=torch.bfloat16):
                     logits, loss = self.__model(x, y)
                 loss = loss / max_steps
                 test_loss_accum += loss.detach()
+                self.__logger.info(f"one step test time: {(time.time() - test_start_time)*1000:.2f}ms")
             if self.__ddp:
                 dist.all_reduce(test_loss_accum, op=dist.ReduceOp.AVG)
         if self.__master_process:
-            self.__logger.info(f"test loss: {test_loss_accum.item():.4f}\n")
+            self.__logger.info(f"test loss: {test_loss_accum.item():.4f}")
     
     def plot_training_loss_curve(self, loss_per_step: dict[int, float]):
         if self.__master_process:
             loss_array = sorted([[k, v] for k, v in loss_per_step.items()])
-            plt.plot(zip(*loss_array))
+            plt.plot(*zip(*loss_array))
             plt.xlabel("Steps")
             plt.ylabel("Loss")
             plt.yscale("log")

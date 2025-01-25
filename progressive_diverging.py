@@ -48,7 +48,8 @@ class Stage2AttentionMlpLoRABlock(nn.Module):
         self.mlp = MLP(n_embd)
         self.load_state_dict(pretrained_attention_mlp_block.state_dict())
         # Freeze pretrained attention weights
-        self.attn.weight.requires_grad = False
+        for param in  self.attn.parameters():
+            param.requires_grad = False
         self.attn_lora = CausalSelfAttentionLoRA(n_embd, n_head)
 
     def forward(self, x):
@@ -75,8 +76,10 @@ class Stage3AttentionMlpLoRABlock(nn.Module):
         self.mlp = MLP(n_embd)
         self.attn_lora = CausalSelfAttentionLoRA(n_embd, n_head)
         self.load_state_dict(stage2_pretrained_attention_mlp_block.state_dict())
-        self.attn.weight.requires_grad = False
-        self.attn_lora.weight.requires_grad = False
+        for param in  self.attn.parameters():
+            param.requires_grad = False
+        for param in  self.attn_lora.parameters():
+            param.requires_grad = False
         self.attn_lora_2 = CausalSelfAttentionLoRA(n_embd, n_head)
 
     def forward(self, x):
@@ -154,7 +157,7 @@ class ProgressiveDiverging(nn.Module):
                     x = block(x)
             self.__logger.debug(f"after stage 1: {x.shape}")
         elif training_progress < 2 / 3:
-            if self.stage_2 is None:
+            if not hasattr(self, 'stage_2'):
                 self.stage_2 = nn.ModuleList(
                     [
                         Stage2AttentionMlpLoRABlock(
@@ -165,13 +168,14 @@ class ProgressiveDiverging(nn.Module):
                         for idx in range(6)
                     ]
                 )
+                self.stage_2.to(device=idx.device)
                 self.__logger.debug(f"stage 2 model: {self.stage_2}")
             for block in self.stage_2:
                 for _ in range(2):
                     x = block(x)
             self.__logger.debug(f"after stage 2: {x.shape}")
         else:
-            if self.stage_3 is None:
+            if not hasattr(self, 'stage_3'):
                 self.stage_3 = nn.ModuleList(
                     [
                         Stage3AttentionMlpLoRABlock(
@@ -182,6 +186,7 @@ class ProgressiveDiverging(nn.Module):
                         for idx in range(12)
                     ]
                 )
+                self.stage_3.to(device=idx.device)
                 self.__logger.debug(f"stage 3 model: {self.stage_3}")
             for block in self.stage_3:
                 x = block(x)
@@ -202,9 +207,10 @@ total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-max_steps = (
-    19073  # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+training_steps = (
+    20 # 10000
 )
+testing_steps = 250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
@@ -226,4 +232,4 @@ if __name__ == "__main__":
         data_name=data_name,
         log_level=args.loglevel,
     )
-    trainer.train_and_test(resume_from_checkpoint, warmup_steps, max_steps, 10000)
+    trainer.train_and_test(resume_from_checkpoint, warmup_steps, training_steps, testing_steps)
