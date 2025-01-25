@@ -195,10 +195,13 @@ class BaseTrainer:
         os.makedirs(self.base_checkpoint_path, exist_ok=True)
 
     def __get_checkpoint_path(self) -> str:
+        return BaseTrainer.get_checkpoint_path(self.__model_name) 
+    
+    @staticmethod    
+    def get_checkpoint_path(model_name: str) -> str:
         return os.path.join(
-            self.base_checkpoint_path, f"{self.__model_name}_checkpoint.txt"
+            BaseTrainer.base_checkpoint_path, f"{model_name}_checkpoint.txt"
         )
-
     def train(self, resume_from_checkpoint: bool, warmup_steps: int, max_steps: int):
         checkpoint_path = self.__get_checkpoint_path()
         loss_per_step = {}
@@ -260,8 +263,6 @@ class BaseTrainer:
         if self.__ddp:
             destroy_process_group()
         
-        # self.plot_training_loss_curve(loss_per_step)    
-
     def __log_and_checkpoint(
         self,
         step: int,
@@ -325,14 +326,3 @@ class BaseTrainer:
                 dist.all_reduce(test_loss_accum, op=dist.ReduceOp.AVG)
         if self.__master_process:
             self.__logger.info(f"test loss: {test_loss_accum.item():.4f}")
-    
-    def plot_training_loss_curve(self, loss_per_step: dict[int, float]):
-        if self.__master_process:
-            loss_array = sorted([[k, v] for k, v in loss_per_step.items()])
-            plt.plot(*zip(*loss_array))
-            plt.xlabel("Steps")
-            plt.ylabel("Loss")
-            plt.yscale("log")
-            plt.title("Training Loss Curve")
-            plt.show()
-        pass
