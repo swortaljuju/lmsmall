@@ -89,10 +89,11 @@ class Stage3AttentionMlpLoRABlock(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return x
 
-
+B = 8  # micro batch size
+T = 256  # sequence length
 @dataclass
 class Config:
-    block_size: int = 1024  # max sequence length
+    block_size: int = T  # max sequence length
     vocab_size: int = (
         50257  # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     )
@@ -101,7 +102,7 @@ class Config:
     n_embd: int = 192  # embedding dimension. 142 instead of 768 to reduce training time
 
 
-# total 8.6m parameters
+# total 11m parameters
 class ProgressiveDiverging(nn.Module):
 
     def __init__(self, config: Config, log_level: int = 0):
@@ -117,7 +118,7 @@ class ProgressiveDiverging(nn.Module):
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # weight sharing scheme
-        self.transformer.wte.weight = self.lm_head.weight
+        self.wte.weight = self.lm_head.weight
 
         # init params
         self.apply(self._init_weights)
@@ -196,8 +197,7 @@ class ProgressiveDiverging(nn.Module):
 
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
-B = 64  # micro batch size
-T = 1024  # sequence length
+
 # create model
 max_lr = 6e-4
 min_lr = max_lr * 0.1
@@ -215,7 +215,7 @@ if __name__ == "__main__":
     resume_from_checkpoint = args.resume_from_checkpoint
     trainer = BaseTrainer(
         "baseline_gpt2",
-        ProgressiveDiverging(Config(vocab_size=50304). args.loglevel),
+        ProgressiveDiverging(Config(), args.loglevel),
         total_batch_size=total_batch_size,
         B=B,
         T=T,

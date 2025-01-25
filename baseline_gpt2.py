@@ -11,9 +11,11 @@ from common_utils import setup_args_parser, setup_logger
 # Baseline GPT2 model from https://github.com/karpathy/build-nanogpt with some modifications
 # Assume the model is only trained on CUDA devices
 
+B = 8 #64  # micro batch size
+T = 256 # 1024  # sequence length
 @dataclass
 class GPTConfig:
-    block_size: int = 1024  # max sequence length
+    block_size: int = T  # max sequence length
     vocab_size: int = (
         50257  # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     )
@@ -23,7 +25,7 @@ class GPTConfig:
 
 model_name = "baseline_gpt2"
 
-# total 8.6m parameters
+# total 15m parameters
 class GPT(nn.Module):
 
     def __init__(self, config: GPTConfig, log_level: int = 0):
@@ -85,8 +87,6 @@ class GPT(nn.Module):
 
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
-B = 8 #64  # micro batch size
-T = 512 # 1024  # sequence length
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715

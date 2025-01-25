@@ -4,7 +4,6 @@ import torch.nn as nn
 from torch.nn import functional as F
 from components import AttentionMlpBlock
 from base_trainer import BaseTrainer
-import sys
 from common_utils import setup_args_parser, setup_logger
 
 # -----------------------------------------------------------------------------
@@ -14,31 +13,31 @@ from common_utils import setup_args_parser, setup_logger
 # ------ Input ------
 # ------ Vocabulary to embedding ------
 # ------ Attention and FeedForward layer  ------
-# ------ (embedding = 48, sequence length = 1024) ------
-# ------ Compressor layer kernel = 5, stride = 5------
-# ------ (embedding = 96, sequence length = 256) ------
-# ------ Attention and FeedForward layer X 2 ------
-# ------ (embedding = 96, sequence length = 256) ------
+# ------ (embedding = initial_n_embedding, sequence length = initial_block_size) ------
 # ------ Compressor layer ------
-# ------ (embedding = 192, sequence length = 64) ------
+# ------ (embedding = initial_n_embedding * 2, sequence length = initial_block_size / 4) ------
 # ------ Attention and FeedForward layer X 2 ------
-# ------ (embedding = 192, sequence length = 64) ------
+# ------ (embedding = initial_n_embedding * 2, sequence length = initial_block_size / 4) ------
 # ------ Compressor layer ------
-# ------ (embedding = 384, sequence length = 16) ------
+# ------ (embedding = initial_n_embedding * 4, sequence length = initial_block_size / 16) ------
+# ------ Attention and FeedForward layer X 2 ------
+# ------ (embedding = initial_n_embedding * 4, sequence length = initial_block_size / 16) ------
+# ------ Compressor layer ------
+# ------ (embedding = initial_n_embedding * 8, sequence length = initial_block_size / 64) ------
 # ------ Attention and FeedForward layer X 2  ------
-# ------ (embedding = 384, sequence length = 16) ------
+# ------ (embedding = initial_n_embedding * 8, sequence length = initial_block_size / 64) ------
 # ------ Expander layer ------
-# ------ (embedding = 192, sequence length = 64) ------
+# ------ (embedding = initial_n_embedding * 4, sequence length = initial_block_size / 16) ------
 # ------ Attention and FeedForward layer X 2 ------
-# ------ (embedding = 192, sequence length = 64) ------
+# ------ (embedding = initial_n_embedding * 4, sequence length = initial_block_size / 16) ------
 # ------ Expander layer ------
-# ------ (embedding = 96, sequence length = 256) ------
+# ------ (embedding = initial_n_embedding * 2, sequence length = initial_block_size / 4) ------
 # ------ Attention and FeedForward layer X 2 ------
-# ------ (embedding = 96, sequence length = 256) ------
+# ------ (embedding = initial_n_embedding * 2, sequence length = initial_block_size / 4) ------
 # ------ Expander layer ------
-# ------ (embedding = 48, sequence length = 1024) ------
+# ------ (embedding = initial_n_embedding, sequence length = initial_block_size) ------
 # ------ Attention and FeedForward layer  ------
-# ------ (embedding = 48, sequence length = 1024) ------
+# ------ (embedding = initial_n_embedding, sequence length = initial_block_size) ------
 # ------ Embedding to vocabulary ------
 # Assume the model is only trained on CUDA devices
 
@@ -77,10 +76,11 @@ class Expander(nn.Module):
     def forward(self, x):
         return self.conv(self.ln(x))
 
-
+B = 8  # micro batch size
+T = 1024  # sequence length
 @dataclass
 class Config:
-    initial_block_size: int = 1024  # max sequence length
+    initial_block_size: int = T  # max sequence length
     vocab_size: int = (
         50257  # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     )
@@ -88,9 +88,10 @@ class Config:
     initial_n_embedding: int = (
         48  # embedding dimension. 142 instead of 768 to reduce training time
     )
+    n_layer: int = 12  # number of layers
 
 
-# total params: 9.19m
+# total params: 9.24m
 class ConvAttentionModel(nn.Module):
     def __init__(self, config: Config, log_level: int = 0):
         super().__init__()
@@ -101,13 +102,13 @@ class ConvAttentionModel(nn.Module):
 
         self.transformer = nn.ModuleDict(
             dict(
-                wte=nn.Embedding(config.vocab_size, config.n_embd),
-                wpe=nn.Embedding(config.block_size, config.n_embd),
-                conv_attention=nn.Sequential(self.__add_conv_attention_blocks(config)),
-                ln_f=nn.LayerNorm(config.n_embd),
+                wte=nn.Embedding(config.vocab_size, config.initial_n_embedding),
+                wpe=nn.Embedding(config.initial_block_size, config.initial_n_embedding),
+                conv_attention=nn.Sequential(*self.__add_conv_attention_blocks(config)),
+                ln_f=nn.LayerNorm(config.initial_n_embedding),
             )
         )
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(config.initial_n_embedding, config.vocab_size, bias=False)
 
         # weight sharing scheme
         self.transformer.wte.weight = self.lm_head.weight
@@ -121,7 +122,7 @@ class ConvAttentionModel(nn.Module):
         if isinstance(module, nn.Linear):
             std = 0.02
             if hasattr(module, "SCALE_INIT"):
-                std *= (2 * self.config.n_layer) ** -0.5
+                std *= (2 * self.__config.n_layer) ** -0.5
             torch.nn.init.normal_(module.weight, mean=0.0, std=std)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
@@ -151,8 +152,8 @@ class ConvAttentionModel(nn.Module):
         # idx is of shape (B, T)
         B, T = idx.size()
         assert (
-            T == self.__config.block_size
-        ), f"Cannot forward sequence of length {T}, block size is only {self.__config.block_size}"
+            T == self.__config.initial_block_size
+        ), f"Cannot forward sequence of length {T}, block size is only {self.__config.initial_block_size}"
         # forward the token and position embeddings
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
@@ -171,8 +172,6 @@ class ConvAttentionModel(nn.Module):
 
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
-B = 64  # micro batch size
-T = 1024  # sequence length
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715

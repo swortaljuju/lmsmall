@@ -112,6 +112,9 @@ class BaseTrainer:
         log_file_path, logger = setup_logger('base_trainer', model_name, log_level)
         self.__logger = logger
         self.__log_file_path = log_file_path
+        
+        total_params = sum(p.numel() for p in model.parameters())
+        logger.debug(f"Total number of parameters: {total_params}")
 
     def __initialize_ddp(self):
         # set up DDP (distributed data parallel).
