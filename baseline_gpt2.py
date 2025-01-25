@@ -48,7 +48,7 @@ class GPT(nn.Module):
         # init params
         self.apply(self._init_weights)
         
-        self.__logger = setup_logger("baseline_gpt2", model_name, log_level)[1]
+        self.__logger = setup_logger("baseline_gpt2", model_name, log_level)
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):

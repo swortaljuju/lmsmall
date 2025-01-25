@@ -53,9 +53,8 @@ class BaseTrainer:
             data_name: the name of the training and testing data
         """
         assert torch.cuda.is_available()
-        log_file_path, logger = setup_logger('base_trainer', model_name, log_level)
+        logger = setup_logger('base_trainer', model_name, log_level)
         self.__logger = logger
-        self.__log_file_path = log_file_path
         self.__initialize_ddp()
         self.__device_type = "cuda"
         torch.cuda.manual_seed(1337)
@@ -71,10 +70,10 @@ class BaseTrainer:
         self.__grad_accum_steps = self.__total_batch_size // (
             B * T * self.__ddp_world_size
         )
-        logger.debug(f"grad_accum_steps: {self.__grad_accum_steps}")
+        self.__logger.debug(f"grad_accum_steps: {self.__grad_accum_steps}")
         if self.__master_process:
-            print(f"total desired batch size: {total_batch_size}")
-            print(
+            self.__logger.info(f"total desired batch size: {total_batch_size}")
+            self.__logger.info(
                 f"=> calculated gradient accumulation steps: {self.__grad_accum_steps}"
             )
         self.__train_loader = DataLoaderLite(
@@ -142,7 +141,7 @@ class BaseTrainer:
             self.__ddp_world_size = 1
             self.__master_process = True
             self.__device = "cuda"
-            print(f"using device: {self.__device}")
+            self.__logger.info(f"using device: {self.__device}")
 
     def __configure_optimizers(self, weight_decay: float, learning_rate: float):
         # start with all of the candidate parameters (that require grad)
@@ -159,10 +158,10 @@ class BaseTrainer:
         num_decay_params = sum(p.numel() for p in decay_params)
         num_nodecay_params = sum(p.numel() for p in nodecay_params)
         if self.__master_process:
-            print(
+            self.__logger.info(
                 f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters"
             )
-            print(
+            self.__logger.info(
                 f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters"
             )
         # Create AdamW optimizer and use the fused version if it is available
@@ -214,7 +213,6 @@ class BaseTrainer:
             start_step = max(loss_per_step.keys())
         else:
             # delete the log file and start training from beginning
-            os.remove(self.__log_file_path)
             os.remove(checkpoint_path)
 
         for step in range(start_step, max_steps):

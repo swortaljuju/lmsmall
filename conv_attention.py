@@ -115,7 +115,7 @@ class ConvAttentionModel(nn.Module):
 
         # init params
         self.apply(self._init_weights)
-        self.__logger = setup_logger("ConvAttentionModel", model_name, log_level)[1]
+        self.__logger = setup_logger("ConvAttentionModel", model_name, log_level)
         self.__logger.debug(f"conv attention layers: {self.transformer.conv_attention}")
 
     def _init_weights(self, module):
