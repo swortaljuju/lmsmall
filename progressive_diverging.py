@@ -126,6 +126,7 @@ class ProgressiveDiverging(nn.Module):
         # init params
         self.apply(self._init_weights)
         self.__logger = setup_logger("progressive_diverging", model_name, log_level)
+        self.__logger.info(f"model structure {self}")
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -169,7 +170,7 @@ class ProgressiveDiverging(nn.Module):
                     ]
                 )
                 self.stage_2.to(device=idx.device)
-                self.__logger.debug(f"stage 2 model: {self.stage_2}")
+                self.__logger.info(f"stage 2 model: {self.stage_2}")
             for block in self.stage_2:
                 for _ in range(2):
                     x = block(x)
@@ -187,7 +188,7 @@ class ProgressiveDiverging(nn.Module):
                     ]
                 )
                 self.stage_3.to(device=idx.device)
-                self.__logger.debug(f"stage 3 model: {self.stage_3}")
+                self.__logger.info(f"stage 3 model: {self.stage_3}")
             for block in self.stage_3:
                 x = block(x)
             self.__logger.debug(f"after stage 3: {x.shape}")
