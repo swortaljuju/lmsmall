@@ -220,6 +220,8 @@ class ProgressiveDiverging(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
 
+    def get_initial_block_size(self):
+        return self.config.block_size
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 
@@ -230,7 +232,7 @@ warmup_steps = 715
 training_steps = (
     20 # 10000
 )
-testing_steps = 250000
+testing_steps = 1 #250000
 weight_decay = 0.1
 learning_rate = 6e-4
 

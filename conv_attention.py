@@ -80,7 +80,7 @@ B = 8  # micro batch size
 T = 1024  # sequence length
 @dataclass
 class Config:
-    initial_block_size: int = T  # max sequence length
+    initial_block_size: int = T  # initial sequence length
     vocab_size: int = (
         50257  # number of tokens: 50,000 BPE merges + 256 bytes tokens + 1 <|endoftext|> token
     )
@@ -92,7 +92,7 @@ class Config:
 
 
 # total params: 9.24m
-class ConvAttentionModel(nn.Module):
+class ConvAttention(nn.Module):
     def __init__(self, config: Config, log_level: int = 0):
         super().__init__()
         assert (
@@ -171,6 +171,8 @@ class ConvAttentionModel(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
 
+    def get_initial_block_size(self):
+        return self.config.initial_block_size
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
@@ -179,7 +181,7 @@ warmup_steps = 715
 training_steps = (
     20 # 10000
 )
-testing_steps = 250000
+testing_steps = 1 #250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
@@ -190,7 +192,7 @@ if __name__ == "__main__":
     resume_from_checkpoint = args.resume_from_checkpoint
     trainer = BaseTrainer(
         model_name,
-        ConvAttentionModel(Config(vocab_size=50304), args.loglevel),
+        ConvAttention(Config(), args.loglevel),
         total_batch_size=total_batch_size,
         B=B,
         T=T,
