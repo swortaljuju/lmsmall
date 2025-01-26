@@ -46,6 +46,7 @@ SEQUENCE_FAN_IN_FACTOR = 4
 
 model_name = "conv_attention"
 
+
 # Compress input from long sequence with small embedding into short sequence with large embedding
 class Compressor(nn.Module):
     def __init__(self, n_embd: int):
@@ -76,8 +77,11 @@ class Expander(nn.Module):
     def forward(self, x):
         return self.conv(self.ln(x))
 
+
 B = 8  # micro batch size
 T = 1024  # sequence length
+
+
 @dataclass
 class Config:
     initial_block_size: int = T  # initial sequence length
@@ -108,7 +112,9 @@ class ConvAttention(nn.Module):
                 ln_f=nn.LayerNorm(config.initial_n_embedding),
             )
         )
-        self.lm_head = nn.Linear(config.initial_n_embedding, config.vocab_size, bias=False)
+        self.lm_head = nn.Linear(
+            config.initial_n_embedding, config.vocab_size, bias=False
+        )
 
         # weight sharing scheme
         self.transformer.wte.weight = self.lm_head.weight
@@ -160,9 +166,7 @@ class ConvAttention(nn.Module):
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (B, T, n_embd)
         x = tok_emb + pos_emb
-        self.__logger.debug(f"shape after embedding {x.shape}")
         x = self.transformer.conv_attention(x)
-        self.__logger.debug(f"shape after conv_attention {x.shape}")
         # forward the final layernorm and the classifier
         x = self.transformer.ln_f(x)
         logits = self.lm_head(x)  # (B, T, vocab_size)
@@ -174,14 +178,13 @@ class ConvAttention(nn.Module):
     def get_initial_block_size(self):
         return self.config.initial_block_size
 
+
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-training_steps = (
-    20 # 10000
-)
-testing_steps = 1 #250000
+training_steps = 20  # 10000
+testing_steps = 1  # 250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
@@ -202,5 +205,9 @@ if __name__ == "__main__":
         learning_rate=learning_rate,
         data_name=data_name,
         log_level=args.loglevel,
+        # Since the sequence is compressed by a factor of 64, we need to predict 64 tokens ahead
+        num_tokens_to_predict=pow(SEQUENCE_FAN_IN_FACTOR, 3),
     )
-    trainer.train_and_test(resume_from_checkpoint, warmup_steps, training_steps, testing_steps)
+    trainer.train_and_test(
+        resume_from_checkpoint, warmup_steps, training_steps, testing_steps
+    )

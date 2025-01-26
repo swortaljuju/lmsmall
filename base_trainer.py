@@ -38,6 +38,7 @@ class BaseTrainer:
         learning_rate: float,
         data_name: str,
         log_level: int,
+        num_tokens_to_predict: int = 1,
     ):
         """
         Args:
@@ -84,6 +85,7 @@ class BaseTrainer:
             master_process=self.__master_process,
             split=Split.TRAIN,
             data_name=data_name,
+            num_tokens_to_predict = num_tokens_to_predict,
         )
         self.__test_loader = DataLoaderLite(
             micro_batch_size=B,
@@ -93,6 +95,7 @@ class BaseTrainer:
             master_process=self.__master_process,
             split=Split.TEST,
             data_name=data_name,
+            num_tokens_to_predict = num_tokens_to_predict,
         )
 
         torch.set_float32_matmul_precision("high")
