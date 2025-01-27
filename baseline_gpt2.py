@@ -95,9 +95,9 @@ max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
 training_steps = (
-    20 # 10000
+    10000
 )
-testing_steps = 1 #250000
+testing_steps = 250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
