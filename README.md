@@ -103,6 +103,11 @@ MixtureGrowth explores growing neural networks by recombining learned parameters
 [Open Access CVF](https://openaccess.thecvf.com/content/WACV2024/papers/Pham_MixtureGrowth_Growing_Neural_Networks_by_Recombining_Learned_Parameters_WACV_2024_paper.pdf?utm_source=chatgpt.com)
 
 
+# Results and Comparison
+| Model | # heads | embedding size | micro batch size | context window | Training Batches | Training Time per batch | Final Training Loss | Testing Batches | Inference time | Average test loss |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |  
+| Baseline GPT2 | 6 | 192 | 8 | 256 | 80k | 487ms | 3.54 | 20k | 5.2ms | 3.4604 |
+
 # Reference
 - https://github.com/karpathy/build-nanogpt 
 - https://github.com/karpathy/nanoGPT 
