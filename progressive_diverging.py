@@ -16,6 +16,8 @@ from typing import (
     Any,
     Mapping,
 )
+from auto_regressive_model import AutoRegressiveModel
+
 # -----------------------------------------------------------------------------
 # Progressive Diverging Model
 # The training process is divided into three stages:
@@ -111,10 +113,10 @@ class Config:
 
 
 # total 11m parameters
-class ProgressiveDiverging(nn.Module):
+class ProgressiveDiverging(AutoRegressiveModel):
 
     def __init__(self, config: Config, log_level: int = 0):
-        super().__init__()
+        super().__init__(config.block_size)
         self.config = config
 
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
@@ -219,9 +221,6 @@ class ProgressiveDiverging(nn.Module):
         if targets is not None:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
-
-    def get_initial_block_size(self):
-        return self.config.block_size
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 

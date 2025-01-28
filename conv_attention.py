@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from components import AttentionMlpBlock
 from base_trainer import BaseTrainer
 from common_utils import setup_args_parser, setup_logger
+from auto_regressive_model import AutoRegressiveModel
 
 # -----------------------------------------------------------------------------
 
@@ -43,7 +44,7 @@ from common_utils import setup_args_parser, setup_logger
 
 EMBEDDING_FAN_IN_FACTOR = 2
 SEQUENCE_FAN_IN_FACTOR = 4
-
+NUM_TOKENS_TO_PREDICT = pow(SEQUENCE_FAN_IN_FACTOR, 3)
 model_name = "conv_attention"
 
 
@@ -96,9 +97,9 @@ class Config:
 
 
 # total params: 9.24m
-class ConvAttention(nn.Module):
+class ConvAttention(AutoRegressiveModel):
     def __init__(self, config: Config, log_level: int = 0):
-        super().__init__()
+        super().__init__(config.initial_block_size)
         assert (
             config.initial_block_size % pow(SEQUENCE_FAN_IN_FACTOR, 3) == 0
         ), f"initial_block_size must be divisible by ${SEQUENCE_FAN_IN_FACTOR} ^ 3"
@@ -175,9 +176,48 @@ class ConvAttention(nn.Module):
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
 
-    def get_initial_block_size(self):
-        return self.config.initial_block_size
-
+    def generate_text(self, prompt: str, max_length: int, device: str, device_type: str) -> str:
+        print(f"input prompt: {prompt}")
+        self.eval()
+        tokens = self.enc.encode(prompt)
+        space_token = self.enc.encode(" ")
+        if len(tokens) > self.config.initial_block_size:
+            tokens = tokens[:self.config.initial_block_size]
+        elif len(tokens) < self.config.initial_block_size:
+            tokens = space_token * ((self.config.initial_block_size - len(tokens))) + tokens
+        print(f"padded token: {self.enc.decode(tokens)}")    
+        tokens = torch.tensor(tokens, dtype=torch.long)
+        tokens = tokens.unsqueeze(0)
+        xgen = tokens.to(device)
+        sample_rng = torch.Generator(device=device)
+        sample_rng.manual_seed(42)
+        while xgen.size(1) < max_length:
+            # forward the model to get the logits
+            with torch.no_grad():
+                with torch.autocast(device_type=device_type, dtype=torch.bfloat16):
+                    logits, loss = self.forward(xgen[:,  xgen.size(1)-self.config.initial_block_size: xgen.size(1)]) # (B, T, vocab_size)
+                for predicted_token_index in range(self.config.initial_block_size - NUM_TOKENS_TO_PREDICT, self.config.initial_block_size ):
+                    # take the logits at the last position
+                    one_col_logits = logits[:,predicted_token_index : predicted_token_index + 1, :].squeeze(1) # (B, vocab_size)
+                    # get the probabilities
+                    probs = F.softmax(one_col_logits, dim=-1)
+                    # do top-k sampling of 50 (huggingface pipeline default)
+                    # topk_probs here becomes (5, 5), topk_indices is (5, 5)
+                    topk_probs, topk_indices = torch.topk(probs, 5, dim=-1)
+                    # select a token from the top-k probabilities
+                    # note: multinomial does not demand the input to sum to 1
+                    ix = torch.multinomial(topk_probs, 1, generator=sample_rng) # (B, 1)
+                    # gather the corresponding indices
+                    xcol = torch.gather(topk_indices, -1, ix) # (B, 1)
+                    # append to the sequence
+                    xgen = torch.cat((xgen, xcol), dim=1)
+                    
+                    if xgen.size(1) == max_length:
+                        break
+                print(f"generated: {self.enc.decode(xgen[0, :].tolist())}")    
+        # print the generated text
+        tokens = xgen[0, :max_length].tolist()
+        return self.enc.decode(tokens)
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
@@ -206,7 +246,7 @@ if __name__ == "__main__":
         data_name=data_name,
         log_level=args.loglevel,
         # Since the sequence is compressed by a factor of 64, we need to predict 64 tokens ahead
-        num_tokens_to_predict=pow(SEQUENCE_FAN_IN_FACTOR, 3),
+        num_tokens_to_predict=NUM_TOKENS_TO_PREDICT,
     )
     trainer.train_and_test(
         resume_from_checkpoint, warmup_steps, training_steps, testing_steps

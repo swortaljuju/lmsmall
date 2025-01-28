@@ -5,6 +5,7 @@ from torch.nn import functional as F
 from components import AttentionMlpBlock
 from base_trainer import BaseTrainer
 from common_utils import setup_args_parser, setup_logger
+from auto_regressive_model import AutoRegressiveModel
 
 # -----------------------------------------------------------------------------
 
@@ -26,10 +27,10 @@ class GPTConfig:
 model_name = "baseline_gpt2"
 
 # total 15m parameters
-class GPT(nn.Module):
+class GPT(AutoRegressiveModel):
 
     def __init__(self, config: GPTConfig, log_level: int = 0):
-        super().__init__()
+        super().__init__(config.block_size)
         self.config = config
 
         self.transformer = nn.ModuleDict(
@@ -86,9 +87,6 @@ class GPT(nn.Module):
         if targets is not None:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
         return logits, loss
-    
-    def get_initial_block_size(self):
-        return self.config.block_size
 
 total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
