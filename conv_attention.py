@@ -177,7 +177,6 @@ class ConvAttention(AutoRegressiveModel):
         return logits, loss
 
     def generate_text(self, prompt: str, max_length: int, device: str, device_type: str) -> str:
-        print(f"input prompt: {prompt}")
         self.eval()
         tokens = self.enc.encode(prompt)
         space_token = self.enc.encode(" ")
@@ -185,7 +184,6 @@ class ConvAttention(AutoRegressiveModel):
             tokens = tokens[:self.config.initial_block_size]
         elif len(tokens) < self.config.initial_block_size:
             tokens = space_token * ((self.config.initial_block_size - len(tokens))) + tokens
-        print(f"padded token: {self.enc.decode(tokens)}")    
         tokens = torch.tensor(tokens, dtype=torch.long)
         tokens = tokens.unsqueeze(0)
         xgen = tokens.to(device)
@@ -214,7 +212,6 @@ class ConvAttention(AutoRegressiveModel):
                     
                     if xgen.size(1) == max_length:
                         break
-                print(f"generated: {self.enc.decode(xgen[0, :].tolist())}")    
         # print the generated text
         tokens = xgen[0, :max_length].tolist()
         return self.enc.decode(tokens)
@@ -223,8 +220,8 @@ total_batch_size = 524288  # 2**19, ~0.5M, in number of tokens
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-training_steps = 20  # 10000
-testing_steps = 1  # 250000
+training_steps = 10000
+testing_steps = 250000
 weight_decay = 0.1
 learning_rate = 6e-4
 
