@@ -24,7 +24,7 @@ class AutoRegressiveModel(nn.Module):
                     model_input = xgen
                     if xgen.size(1) > self.__context_window_size:
                         model_input = xgen[:, -self.__context_window_size:]
-                    logits, loss = self.forward(model_input) # (B, T, vocab_size)
+                    logits, loss = self.forward(model_input, training_progress = 1) # (B, T, vocab_size)
                 # take the logits at the last position
                 logits = logits[:, -1, :] # (B, vocab_size)
                 # get the probabilities
