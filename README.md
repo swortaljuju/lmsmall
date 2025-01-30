@@ -106,9 +106,9 @@ MixtureGrowth explores growing neural networks by recombining learned parameters
 # Results and Comparison
 | Model | # heads | embedding size | micro batch size | context window | Training Batches | Training Time per batch | Final Training Loss | Testing Batches | Inference time | Average test loss |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |  
-| Baseline GPT2 | 6 | 192 | 8 | 256 | 80k | 487ms | 3.54 | 20k | 5.2ms | 3.4604 |
-| Convolution Attention | 6 | 48 - 496 | 8 | 1024 | 80k | 250ms | 1.42 | 20k | 12.23ms | 1.3 |
-
+| Baseline GPT2 | 6 | 192 | 8 | 256 | 80k | 487ms | 3.54 | 25k | 5.2ms | 3.5 |
+| Convolution Attention | 6 | 48 - 496 | 8 | 1024 | 80k | 250ms | 1.42 | 25k | 12.23ms | 1.3 |
+| Progressive Diverging | 6 | 192 | 8 | 256 | 80k | 655ms | 4.65 | 25k | 5ms | 4.7 | 
 
 # Reference
 - https://github.com/karpathy/build-nanogpt 
