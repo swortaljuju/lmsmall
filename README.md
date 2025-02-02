@@ -39,7 +39,8 @@ Most math and reasoning problems can be converted to logical inference like
 > **Statement A (Operand)** *AND/OR/+/- (Operator)* **Statement B (Operand)** -> **Statement C** 
 
 where Statement A, B and C can be text of any length.  
-To simulate this structure, we can design a model which contains convolution network to transform long sequence of tokens into fewer tokens while with larger embedding for each token. Each operand, operator and result is represented by a single token in the model's inner layers. And attention mechanism is applied to the shorter token sequence to detect relationship among operands and operators.  
+
+To simulate this structure, I designed a model which contains convolution network to transform long sequence of tokens into fewer tokens while with larger embedding for each token. Each operand, operator and result is represented by a single token in the model's inner layers. And attention mechanism is applied to the shorter token sequence to detect relationship among operands and operators.  
 
 - The whole model has 3 compressor blocks and 3 expander blocks like a encoder decoder model. 
 - The first 3 blocks are compressor blocks. They compress a sequence with high token number and low embedding size into a sequence with low token number and high embedding size.
